@@ -1,0 +1,10 @@
+*.py[co]
+.idea
+dist/
+tests/
+MANIFEST
+tmp/
+.DS_Store
+build
+venv
+test.py
