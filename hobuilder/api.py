@@ -81,21 +81,20 @@ class Api(object):
         }
         _params.update(params or {})
 
-        return Request(target, method, _params)
+        return Request(self, target, method, _params)
 
     def send_request(self, request):
 
         request.attempts += 1
 
-        self.log('Executing %s' % request.url)
+        self.log('Executing %s' % request.get_url())
         start = time.time()
 
-        http_response = requests.get(request.url)
+        http_response = requests.get(request.get_url())
 
         complete_time = time.time() - start
         self.log('Received %s in %.2fms: %s' % (http_response.status_code, complete_time * 1000, http_response.text))
 
-        # json_response = json.loads(http_response.text)
         json_response = http_response.json()
 
         if ('response' not in json_response
@@ -106,8 +105,8 @@ class Api(object):
             try:
                 raise self.cast_error(json_response)
             except APIUsageExceededRateLimit:
-                if self.retry_count > 1 and request.attempts < self.retry_count:
-                    self.log('Retrying request: attempts %d!' % request.attempts)
+                if request.attempts < self.retry_count:
+                    self.log('Resending request: attempt %d!' % request.attempts)
                     time.sleep(0.25)
                     return self.send_request(request)
                 else:
@@ -133,18 +132,17 @@ class Api(object):
 
 class Request(object):
 
-    def __init__(self, target, method, params):
+    def __init__(self, master, target, method, params):
+        self.master = master
         self.target = target
         self.method = method
         self.params = params
 
         self.attempts = 0
 
-        self.url = self.build_url(target, params)
-
-    def build_url(self, target, params):
-        base_url = ROOT + '%s.json?' % target
-        return base_url + http_build_query(params)
+    def get_url(self):
+        base_url = ROOT + '%s.json?' % self.target
+        return base_url + http_build_query(self.params)
 
 
 class Response(object):
@@ -158,6 +156,12 @@ class Response(object):
         self.httpStatus = json_response['response']['httpStatus']
         self.errors = json_response['response']['errors']
         self.errorMessage = json_response['response']['errorMessage']
+
+    def __iter__(self):
+        if 'page' not in self.data:
+            raise StopIteration
+        else:
+            return RequestIterator(self.request, self.data['page'], self.data['pageCount'])
 
     def extract_all(self, model_name=None):
         model_name = model_name or self.request.target
@@ -173,6 +177,22 @@ class Response(object):
         model_name = model_name or self.request.target
 
         return Mapper.extract_one(self.data, model_name)
+
+
+class RequestIterator(object):
+
+    def __init__(self, request, page, page_count):
+        self.request = request
+        self.page = page
+        self.page_count = page_count
+
+    def __next__(self):
+        if self.page <= self.page_count:
+            self.request.params['page'] = self.page
+            self.page += 1
+            return self.request.master.send_request(self.request)
+        else:
+            raise StopIteration
 
 
 class Model(object):
