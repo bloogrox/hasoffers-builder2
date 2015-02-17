@@ -11,9 +11,6 @@ logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stderr))
 
 
-ROOT = 'http://api.hasoffers.com/v3/'
-
-
 class Error(Exception):
     pass
 class APIUsageExceededRateLimit(Error):
@@ -21,6 +18,8 @@ class APIUsageExceededRateLimit(Error):
 
 
 class Api(object):
+
+    BASE_URL = 'https://api.hasoffers.com/Apiv3/json'
 
     """
     Usage:
@@ -55,7 +54,7 @@ class Api(object):
             self.method = method
             return self
 
-    def __init__(self, network_token, network_id, debug=False, retry_count=1):
+    def __init__(self, network_token, network_id, debug=False, retry_count=1, api_type='brand'):
         self.network_token = network_token
         self.network_id = network_id
 
@@ -64,24 +63,57 @@ class Api(object):
         else:
             self.level = logging.DEBUG
 
+        self.config = {}
+
+        if api_type == 'brand':
+            self.config = dict(
+                NETWORK_TOKEN_PARAMETER_NAME='NetworkToken',
+                TARGET_PREFIX=''
+            )
+        elif api_type == 'affiliate':
+            self.config = dict(
+                NETWORK_TOKEN_PARAMETER_NAME='api_key',
+                TARGET_PREFIX='Affiliate_'
+            )
+
         self.retry_count = retry_count
 
         self.method_proxy = self.MethodProxy(self)
 
     def call(self, target, method, params=None):
-        request = self.create_request(target, method, params)
+        # request = self.create_request(target, method, params)
+        _params = {
+            'NetworkId': self.network_id,
+            self.config['NETWORK_TOKEN_PARAMETER_NAME']: self.network_token,
+            'Target': self.config['TARGET_PREFIX'] + target,
+            'Method': method
+        }
+        if params:
+            _params.update(params)
+
+        # url = self.build_url(_params)
+        url = self.BASE_URL + '?' + http_build_query(_params)
+
+        request = RequestFactory.create(self, target, method, _params, url)
 
         return self.send_request(request)
 
-    def create_request(self, target, method, params):
-        _params = {
-            'NetworkId': self.network_id,
-            'NetworkToken': self.network_token,
-            'Method': method
-        }
-        _params.update(params or {})
+    def build_url(self, params):
+        return self.BASE_URL + '?' + http_build_query(params)
 
-        return Request(self, target, method, _params)
+    # def create_request(self, target, method, params):
+    #     _params = {
+    #         'NetworkId': self.network_id,
+    #         self.config['NETWORK_TOKEN_PARAMETER_NAME']: self.network_token,
+    #         'Target': self.config['TARGET_PREFIX'] + target,
+    #         'Method': method
+    #     }
+    #     if params:
+    #         _params.update(params)
+    #
+    #     url = self.build_url(_params)
+    #
+    #     return Request(self, target, method, _params, url)
 
     def send_request(self, request):
 
@@ -122,7 +154,7 @@ class Api(object):
         return Error(response_body['response']['errorMessage'])
 
     def log(self, *args, **kwargs):
-        '''Proxy access to the hasoffers logger, changing the level based on the debug setting'''
+        """Proxy access to the hasoffers logger, changing the level based on the debug setting"""
         logger.log(self.level, *args, **kwargs)
 
     def __getattr__(self, target):
@@ -130,19 +162,26 @@ class Api(object):
         return self.method_proxy
 
 
+class RequestFactory():
+
+    @classmethod
+    def create(cls, master, target, method, params, url):
+        return Request(master, target, method, params, url)
+
+
 class Request(object):
 
-    def __init__(self, master, target, method, params):
+    def __init__(self, master, target, method, params, url):
         self.master = master
         self.target = target
         self.method = method
         self.params = params
+        self.url = url
 
         self.attempts = 0
 
     def get_url(self):
-        base_url = ROOT + '%s.json?' % self.target
-        return base_url + http_build_query(self.params)
+        return self.url
 
 
 class Response(object):

@@ -1,12 +1,12 @@
 from distutils.core import setup
 
 setup(
-    name='hasoffers-builder',
+    name='hasoffers-builder2',
     version='0.1.0',
     author='Aslan',
     author_email='bloogrox@gmail.com',
-    packages=['hobuilder'],
-    url='https://github.com/bloogrox/hasoffers-builder.git',
+    packages=['hobuilder2'],
+    url='https://github.com/bloogrox/hasoffers-builder2.git',
     description='Python client for Hasoffers API v3',
     install_requires=[
         "requests",
